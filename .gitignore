@@ -1,0 +1,5 @@
+/output/*.elf
+/output/fixup*
+/output/bootcode.bin
+/output/*.img
+/firmware

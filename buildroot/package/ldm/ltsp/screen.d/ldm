@@ -1,0 +1,133 @@
+#!/bin/sh
+# Depend on the ldm package
+#
+# Copyright 2005, Canonical Ltd.
+# Copyright 2006-2008 Vagrant Cascadian
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License with your
+# Debian GNU system, in /usr/share/common-licenses/GPL.  If not, write to the
+# Free Software Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+# 02111-1307, USA.
+
+#
+# Load code common to X based screen scripts
+#
+
+# NOTE: The while loop has been moved into screen_session (the parent script
+# to this one.  MAKE SURE YOU HAVE THE LATEST ltsp-trunk
+
+trap cleanup 0 INT QUIT TERM
+
+cleanup()
+{
+    if [ -d "${XAUTHORITY_DIR}" ]; then
+        rm -Rf "${XAUTHORITY_DIR}"
+    fi
+
+    if [ -f "${XAUTHORITY}" ]; then
+        rm -f "${XAUTHORITY}"
+    fi
+
+    if [ -f "/tmp/.X${TTY}-lock" ]; then
+        rm -f "/tmp/.X${TTY}-lock"
+    fi
+
+    if [ -S "/tmp/.X11-unix/X${TTY}" ]; then
+        rm -f "/tmp/.X11-unix/X${TTY}"
+    fi
+}
+
+. /usr/share/ltsp/screen-x-common
+# backwards compatibility: set DISPLAY from old DISP variable
+test -z "$DISPLAY" && DISPLAY="$DISP"
+XAUTHORITY_DIR=`mktemp -d /var/run/ldm-xauth-XXXXXXXXX`
+export XAUTHORITY_DIR
+XAUTHORITY="${XAUTHORITY_DIR}/Xauthority"
+touch $XAUTHORITY
+export XAUTHORITY
+
+SESSIONLIST="/etc/X11/xinit/Xsession \
+             /etc/X11/Xsession \
+             /usr/lib/X11/xdm/Xsession \
+             /etc/X11/xdm/Xsession"
+
+if [ -z "$LDM_LOGIN_TIMEOUT" ] && [ -n "$LDM_TIMEOUT_TIME" ] && [ -n "$LDM_TIMEOUT_ENABLED" ]; then
+    # implement backwards compatibility with short-lived timeout login options
+    if boolean_is_true "$LDM_TIMEOUT_ENABLED" ; then
+        LDM_LOGIN_TIMEOUT="$LDM_TIMEOUT_TIME"
+    fi
+fi
+
+#
+# Server scalability.  If there exists a /usr/share/ltsp/get_hosts file, then
+# use it to populate the LDM_SERVER environment variable.
+#
+
+if [ -z "${LDM_SERVER}" ]; then
+    if [ -x /usr/share/ltsp/get_hosts ]; then
+        LDM_SERVER=$(/usr/share/ltsp/get_hosts)
+    else
+        LDM_SERVER=${SERVER}
+    fi
+fi
+export LDM_SERVER
+
+#
+# Loop though each of the hosts, and get their ldminfo
+#
+
+if [ -n "${LDM_SERVER}" ]; then
+    test ! -d /var/run/ldm && mkdir -p /var/run/ldm
+    for SRV in $LDM_SERVER ; do
+        # Write server to /etc/hosts so reverse DNS lookup is not necessary
+        if ! grep -q "$SRV" /etc/hosts ; then
+            echo "$SRV	server-$SRV" >> /etc/hosts
+        fi
+        # For this to work, ldm-server needs to be installed in the chroot
+        if boolean_is_true "$LTSP_FATCLIENT" && [ -x /usr/share/ldm/ldminfod ]; then
+            /usr/share/ldm/ldminfod > /var/run/ldm/$SRV
+            break
+        else
+            nc $nc_q_param -w 5 $SRV 9571 > /var/run/ldm/$SRV
+        fi
+    done
+fi
+
+get_xfs_settings "$LDM_SERVER"
+
+MCOOKIE=$(mcookie)
+if [ -z "${MCOOKIE}" ]; then
+    echo "Couldn't create cookie"
+    exit 1
+fi
+
+# FIXME: This needs to non-destructively operate  in parallel with other
+# X servers running on the same machine.  See /usr/bin/startx for example.
+xauth -q add ${DISPLAY} . ${MCOOKIE} 2>/dev/null
+# Might not be necessary to do these...
+xauth -q add `hostname`${DISPLAY} . ${MCOOKIE} 2>/dev/null
+xauth -q add 127.0.0.1/unix${DISPLAY} . ${MCOOKIE} 2>/dev/null
+
+# Define our session
+if [ -z "${LDM_XSESSION}" ]; then        # If admin hasn't specified session
+    for SESSION in ${SESSIONLIST}; do
+        if [ -x ${SESSION} ]; then
+            export LDM_DEFAULT_XSESSION=${SESSION}
+            break
+        fi
+    done
+fi
+
+if [ -x /usr/share/ltsp/xinitrc ]; then
+    xinitrc=/usr/share/ltsp/xinitrc
+fi
+
+xinit $xinitrc /usr/sbin/ldm -- ${DISPLAY} vt${TTY} -auth ${XAUTHORITY} ${X_ARGS} -br >/dev/null 2>&1

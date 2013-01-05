@@ -1,0 +1,7 @@
+config BR2_PACKAGE_LDM
+	bool "LDM display manager"
+    select BR2_PACKAGE_LIBGTK2
+	help
+	  LTDSP display manager
+	  
+	  http://packages.ubuntu.com/precise/ldm

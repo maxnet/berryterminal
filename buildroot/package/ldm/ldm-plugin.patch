@@ -1,0 +1,13 @@
+diff -ur ldm-2.2.9/src/ldmplugin.c ldm-2.2.9.new/src/ldmplugin.c
+--- ldm-2.2.9/src/ldmplugin.c	2012-04-13 18:20:16.000000000 +0200
++++ ldm-2.2.9.new/src/ldmplugin.c	2012-05-17 16:10:02.780013819 +0200
+@@ -151,7 +151,7 @@
+     }
+     struct dirent* entry;
+     while (entry = readdir(plugin_dir)) {
+-        if (entry->d_type == DT_REG && (strstr(entry->d_name, ".so") != NULL)) {
++        if ((entry->d_type == DT_REG || entry->d_type == DT_UNKNOWN) && (strstr(entry->d_name, ".so") != NULL)) {
+             int name_len = strlen(entry->d_name)+strlen(LDM_PLUG_DIR)+2;
+             char* plug_name = (char *) malloc(name_len);
+             snprintf(plug_name, name_len, "%s/%s", LDM_PLUG_DIR, entry->d_name);
+Only in ldm-2.2.9.new/src: ldmplugin.c~

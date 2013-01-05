@@ -1,0 +1,11 @@
+--- ldm-2.2.9/src/plugins/ssh/ssh.c     2012-04-13 18:20:16.000000000 +0200
++++ ldm-2.2.9.new/src/plugins/ssh/ssh.c 2012-06-02 02:27:41.553062092 +0200
+@@ -385,6 +385,7 @@
+         } else if (seen < 0) {
+             set_message(_("No response from server, restarting..."));
+             sleep(5);
++            close_greeter();
+             die("ssh","no response, restarting");
+         }
+     }
+

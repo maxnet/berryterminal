@@ -1,4 +1,4 @@
-berryterminal
-=============
+Berryterminal
+LTSP client for the Raspberry Pi
 
-LTSP thinclient software bundle for Raspberry Pi
+See http://www.berryterminal.com/

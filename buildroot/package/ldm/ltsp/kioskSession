@@ -1,0 +1,28 @@
+#!/bin/sh
+
+KIOSK_EXE=$1
+KIOSKHOME=/usr/local/share/ltspkiosk/home
+KIOSKSTARTUP=/usr/local/share/ltspkiosk/startup
+
+TMPDIR=$(getent passwd ltspkiosk| cut -d: -f6)
+export HOME=${TMPDIR}
+
+# Copy a default homedir if present
+if [ -d  "${KIOSKHOME}" ]; then
+    cp -r ${KIOSKHOME}/* ${KIOSKHOME}/.??* ${TMPDIR}
+fi
+
+[ -n "${XAUTHORITY}" ] && cp -a ${XAUTHORITY} ${TMPDIR}
+
+for i in ${KIOSKSTARTUP}/* ; do
+    [ -x "${i}" ] && eval "${i}" &
+done
+
+if [ "${KIOSK_EXE}" = "unknown" ]; then
+    ldm-dialog --message "No program found."
+else
+    eval ${KIOSK_EXE} ${KIOSK_OPTIONS} || ldm-dialog --message "Could not start program."
+fi
+
+[ "$USER" != "root" ] && pkill -u $USER
+exit 0

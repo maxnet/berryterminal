@@ -1,0 +1,82 @@
+#!/bin/sh
+#
+#  Copyright (c) 2002 McQuillan Systems, LLC
+#
+#  Author: James A. McQuillan <jam@McQuil.com>
+#
+#  2005, Matt Zimmerman <mdz@canonical.com>
+#  2006, Oliver Grawert <ogra@canonical.com>
+#  2007, Scott Balneaves <sbalneav@ltsp.org>
+#  2008, Warren Togami <wtogami@redhat.com>
+#        Stephane Graber <stgraber@ubuntu.com>
+#        Vagrant Cascadian <vagrant@freegeek.org>
+#        Gideon Romm <ltsp@symbio-technologies.com>
+#  2012, Alkis Georgopoulos <alkisg@gmail.com>
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License as
+#  published by the Free Software Foundation; either version 2 of the
+#  License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, you can find it on the World Wide
+#  Web at http://www.gnu.org/copyleft/gpl.html, or write to the Free
+#  Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
+#  MA 02110-1301, USA.
+#
+
+# Load LTSP configuration
+# ltsp_config sources ltsp-client-functions
+. /usr/share/ltsp/ltsp_config
+
+case "$1" in
+    [0-1][0-9])
+        num="$1"
+        ;;
+    *)
+        die "Usage: $0 [01..12]"
+        ;;
+esac
+
+while true; do
+    # Wait until this is the active vt before launching the screen script
+    while [ $(fgconsole) -ne "$num" ]; do
+        sleep 2
+    done
+
+    if [ -f /etc/ltsp/getltscfg-cluster.conf ]; then
+        # Reset the environement
+        unset $(env | egrep '^(\w+)=(.*)$' | egrep -vw 'PWD|USER|PATH|HOME' | /usr/bin/cut -d= -f1)
+        . /usr/share/ltsp/ltsp_config
+        eval $(getltscfg-cluster -a -l prompt)
+    fi
+
+    read script args <<EOF
+$(eval echo "\$SCREEN_$num")
+EOF
+
+    # Screen scripts in /etc override those in /usr
+    unset script_path
+    for dir in /etc/ltsp/screen.d /usr/share/ltsp/screen.d; do
+        if [ -x "$dir/$script" ]; then
+            script_path="$dir/$script"
+            break
+        fi
+    done
+    if [ -z "$script_path" ]; then
+        die "Script '$script' for SCREEN_$num was not found"
+    fi
+
+    for script in $(run_parts_list /usr/share/ltsp/screen-session.d/ S); do
+        . "$script"
+    done
+    "$script_path" "$args"
+    for script in $(run_parts_list /usr/share/ltsp/screen-session.d/ K); do
+        . "$script"
+    done
+done

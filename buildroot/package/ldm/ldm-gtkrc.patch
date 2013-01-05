@@ -1,0 +1,28 @@
+--- ldm-2.2.9/themes/ltsp/greeter-gtkrc	2012-05-17 15:31:35.207934364 +0200
++++ ldm-2.2.9.new/themes/ltsp/greeter-gtkrc	2012-05-17 15:32:40.335936606 +0200
+@@ -28,10 +28,10 @@
+ 
+     engine "clearlooks"
+     {
+-        menubarstyle      = 0       # 0 = flat, 1 = sunken, 2 = flat gradient
+-        menuitemstyle     = 0       # 0 = flat, 1 = 3d-ish (gradient), 2 = 3d-ish (button)
+-        listviewitemstyle = 0       # 0 = flat, 1 = 3d-ish (gradient)
+-        progressbarstyle  = 0       # 0 = candy bar, 1 = fancy candy bar, 2 = flat
++#        menubarstyle      = 0       # 0 = flat, 1 = sunken, 2 = flat gradient
++#        menuitemstyle     = 0       # 0 = flat, 1 = 3d-ish (gradient), 2 = 3d-ish (button)
++#        listviewitemstyle = 0       # 0 = flat, 1 = 3d-ish (gradient)
++#        progressbarstyle  = 0       # 0 = candy bar, 1 = fancy candy bar, 2 = flat
+         animation         = FALSE
+     }
+ }
+@@ -74,6 +74,10 @@
+     bg[NORMAL] = { 1.0,1.0,0.75 }
+ }
+ 
++style "clearlooks-button" = "clearlooks-default"
++{
++}
++
+ # widget styles
+ class "GtkWidget"      style "clearlooks-default"
+ class "GtkCombo"       style "clearlooks-button"

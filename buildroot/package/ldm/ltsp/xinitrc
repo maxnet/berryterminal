@@ -1,0 +1,90 @@
+#!/bin/sh
+#
+#  Copyright (c) 2008 Gideon Romm <ltsp@symbio-technologies.com>
+#
+#  2008, Vagrant Cascadian <vagrant@freegeek.org>
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License as
+#  published by the Free Software Foundation; either version 2 of the
+#  License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, you can find it on the World Wide
+#  Web at http://www.gnu.org/copyleft/gpl.html, or write to the Free
+#  Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
+#  MA 02110-1301, USA.
+#
+
+# xinit won't allow "--" to be used in the command line of the client:
+#   xinit [ [ client ] options ... ] [ -- [ server ] [ display ] options ... ]
+# Moreover, the lts.conf SCREEN_XX variables are usually formatted using a
+# quoted shell-like syntax, and they require either eval or sourcing in order
+# to be properly evaluated.
+# For those reasons, screen.d scripts should pass a single argument to
+# xinitrc, e.g.:
+#   xinit /usr/share/ltsp/xinitrc "$* $LTS_OPTION1 $LTS_OPTION2"
+# And that command will then be executed by xinitrc using eval.
+# Note though that when xinitrc isn't present, screen scripts should use eval
+# themselves instead (while losing the ability to pass "--" to programs), e.g.:
+#   eval xinit "$* $LTS_OPTION1 $LTS_OPTION2"
+# Quoting the parameters is necessary in both cases to avoid glob expansion.
+
+. /usr/share/ltsp/ltsp-client-functions
+
+XINITRCDIR=/usr/share/ltsp/xinitrc.d
+
+COMMAND=$*
+
+export COMMAND
+
+# use run-parts to source every file in the xinitrc directory; we source
+# instead of executing so that the variables and functions defined above
+# are available to the scripts, and so that they can pass variables to each
+# other
+XINITRCFILES=$(run_parts_list $XINITRCDIR)
+if [ -n "$XINITRCFILES" ]; then
+  set +e
+  for XINITRCFILE in $XINITRCFILES; do
+    . $XINITRCFILE
+  done
+  set -e
+fi
+
+if boolean_is_true "$XINITRC_DAEMON"; then
+    set +e
+    # Make the arrow aa bit more presentable.  :)
+    xsetroot -cursor_name top_left_arrow
+    unset BREAK_LOOP
+    while [ -z "$BREAK_LOOP" ]; do
+        # Quotes prevent possible glob expansion before the eval call
+        eval "$COMMAND"
+        ret=$?
+        if [ "$ret" != "0" ]; then
+            if [ -z "$XINITRC_COMMAND_ON_ERROR" ]; then
+                XINITRC_COMMAND_ON_ERROR="ldm-dialog --message \"An error has occured.\"" 
+            fi
+            if boolean_is_true "$XINITRC_PROMPT_ON_ERROR"; then
+                for i in $XINITRC_ERROR_CODES; do
+                    if [ "$i" = "$ret" ]; then
+                        eval ${XINITRC_COMMAND_ON_ERROR} 2>/dev/null || true
+                    fi
+                done
+            fi
+        else
+            if boolean_is_true "$XINITRC_PROMPT_ON_EXIT"; then
+                ldm-dialog --question "Would you like to start this session?" 2>/dev/null || true
+                [ "$?" != 0 ] && BREAK_LOOP=1
+            fi
+        fi
+    done
+    [ -n "$XINITRC_COMMAND_ON_EXIT" ] && eval ${XINITRC_COMMAND_ON_EXIT}
+    set -e
+else
+    eval "exec $COMMAND"
+fi

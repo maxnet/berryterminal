@@ -1,0 +1,27 @@
+# Debian-specific function overrides for the common functions
+
+detect_arch() {
+    if [ -x /usr/bin/dpkg ]; then
+        echo $(dpkg --print-architecture)
+    else
+        echo "i386"
+    fi
+}
+
+umount_marked() {
+    [ -z "$MARKED_MOUNTS" ] && return
+
+    echo "$MARKED_MOUNTS" | while read dir; do
+        # binfmt_misc might need to be unmounted manually, see LP #534211
+        if [ "$dir%/proc}" != "$dir" ] && 
+            [ -d "$dir/sys/fs/binfmt_misc" ] && [ -f "$dir/mounts" ] &&
+            grep -q "^binfmt_misc $dir/sys/fs/binfmt_misc" "$dir/mounts"; then
+            if ! umount "$dir/sys/fs/binfmt_misc"; then
+                echo "Couldn't unmount $dir/sys/fs/binfmt_misc." >&2
+            fi
+        fi
+        if ! umount "$dir"; then
+            echo "Couldn't unmount $dir." >&2
+        fi
+    done
+}

@@ -1,0 +1,318 @@
+#!/bin/sh -e
+#
+#  Copyright (c) 2006 Vagrant Cascadian <vagrant@freegeek.org>
+#
+#  2006, Vagrant Cascadian <vagrant@freegeek.org>
+#        Oliver Grawert <ogra@canonical.com>
+#  2007, Vagrant Cascadian <vagrant@freegeek.org>
+#        Scott Balneaves <sbalneav@ltsp.org>
+#  2008, Vagrant Cascadian <vagrant@freegeek.org>
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License as
+#  published by the Free Software Foundation; either version 2 of the
+#  License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, you can find it on the World Wide
+#  Web at http://www.gnu.org/copyleft/gpl.html, or write to the Free
+#  Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
+#  MA 02110-1301, USA.
+#
+
+# this script is run either chrooted on the server, or by a client with write
+# access to the NFS mount point. (much of this code was originally in
+# server/ltsp-update-kernels). --vagrant 20060801
+
+if [ -f /etc/ltsp/update-kernels.conf ]; then
+    . /etc/ltsp/update-kernels.conf
+fi
+
+BOOT=${BOOT:-"/boot"}
+SUB_ARCH=${SUB_ARCH:-"$(uname -m)"}
+VENDOR=${VENDOR:-"$(lsb_release -i -s)"}
+
+case $0 in
+  /etc/kernel/post*.d*) QUIET=true ;;
+esac
+
+msg() {
+    if [ "$QUIET" != "true" ]; then
+       echo $@
+    fi
+}
+
+if [ -z "$CHROOT_NAME" ]; then
+    # FIXME: replace with a common function
+    CHROOT_NAME="$(dpkg --print-architecture)"
+fi
+
+if [ -z "$BOOTPROMPT_OPTS" ]; then
+    if [ "$VENDOR" = "Ubuntu" ]; then
+        BOOTPROMPT_OPTS="root=/dev/nbd0 init=/sbin/init-ltsp quiet splash plymouth:force-splash vt.handoff=7"
+    elif [ "$VENDOR" = "Debian" ]; then
+        BOOTPROMPT_OPTS="quiet root=/dev/nfs ip=dhcp boot=nfs init=/sbin/init-ltsp"
+    else
+        BOOTPROMPT_OPTS="root=/dev/nfs ip=dhcp init=/sbin/init-ltsp"
+    fi
+fi
+
+if [ -f /usr/lib/yaboot/yaboot ]; then
+    cp -a -v /usr/lib/yaboot/yaboot $BOOT
+    cat > $BOOT/yaboot.conf <<EOF
+timeout=0
+default=ltsp
+root=/dev/ram
+
+image=/ltsp/$CHROOT_NAME/vmlinux
+        label=ltsp
+        initrd=/ltsp/$CHROOT_NAME/initrd.img
+        append="$BOOTPROMPT_OPTS"
+EOF
+
+else
+    msg "Skipping yaboot configuration. install yaboot package if you need it."
+fi
+
+syslinux_dir=/usr/lib/syslinux
+if [ -f $syslinux_dir/pxelinux.0 ]; then
+    PXECFG=$BOOT/pxelinux.cfg
+    cp $syslinux_dir/pxelinux.0 $BOOT
+
+    # copy over variant with extended support for gPXE
+    if [ -f "$syslinux_dir/gpxelinux.0" ]; then
+        cp $syslinux_dir/gpxelinux.0 $BOOT
+    fi
+
+    # copy the PXELINUX_DEFAULT helper program if installed, such as menu or
+    # vesamenu
+    if [ -f "$syslinux_dir/$PXELINUX_DEFAULT.c32" ]; then
+        cp "$syslinux_dir/$PXELINUX_DEFAULT.c32" $BOOT
+        case $PXELINUX_DEFAULT in
+            # set a timeout, otherwise the menu will wait indefinitely
+            menu|vesamenu) TIMEOUT=${TIMEOUT:-"50"} ;;
+        esac
+    fi
+
+    if [ -n "$TIMEOUT" ]; then
+        TIMEOUT="timeout $TIMEOUT"
+    fi
+
+    if [ -n "$IPAPPEND" ]; then
+        IPAPPEND="ipappend $IPAPPEND"
+    fi
+
+    if [ ! -d $PXECFG ]; then
+        mkdir $PXECFG
+    fi
+    cat > $PXECFG/default <<EOF
+default ${PXELINUX_DEFAULT:-"ltsp"}
+$TIMEOUT
+
+label ltsp
+kernel vmlinuz
+append ro initrd=initrd.img $BOOTPROMPT_OPTS
+$IPAPPEND
+
+EOF
+
+    if [ -f "$PXELINUX_APPEND_FILE" ]; then
+        cat "$PXELINUX_APPEND_FILE" >> $PXECFG/default
+    fi
+
+    memtest_bin='memtest86+.bin memtest86.bin'
+    for memtest in $memtest_bin ; do
+        memtest_name=$(basename $memtest .bin)
+        if [ -f $BOOT/$memtest_name ]; then
+            # prefer memtest86+ and memtest86 without the .bin extension, to
+            # work around bug(s) in pxelinux/memtest86*:
+            # http://bugs.debian.org/546219
+            memtest="$memtest_name"
+        fi
+        if [ -f $BOOT/$memtest ]; then
+            cat >> $PXECFG/default <<EOF
+
+label $memtest_name
+kernel $memtest
+
+EOF
+        fi
+    done
+
+else
+    msg "Skipping PXE configuration.  Install the syslinux package if you need it."
+fi
+
+# allow specifying a specific kernel image to update, from kernel postinst
+if [ -f "$2" ]; then
+    ALL_KERNELS="$2"
+else
+    ALL_KERNELS="$(find $BOOT -type f -name 'vmlinu*')"
+fi
+
+# look for symlinks, too, and put them after the "real" kernels
+ALL_KERNELS="$ALL_KERNELS $(find $BOOT -type l -name 'vmlinu*')"
+
+for kernel in $ALL_KERNELS ; do
+    basename=$(basename "$kernel")
+    initrd=initrd.img
+    nbi=nbi.img
+
+    case $basename in
+        vmlinuz|vmlinux)
+            # USE DEFAULT
+        ;;
+        vmlinu*.old) 
+            initrd=$initrd.old
+            nbi=$nbi.old
+        ;;
+        vmlinuz*) 
+            version=${basename##vmlinuz-}
+            initrd=$initrd-$version
+            nbi=$nbi-$version
+        ;;
+        vmlinux*) 
+            version=${basename##vmlinux-}
+            initrd=$initrd-$version
+            nbi=$nbi-$version
+        ;;
+    esac
+
+    if [ -L "$kernel" ]; then
+        basename="$(readlink $kernel)"
+        if [ -f "$BOOT/$basename" ]; then
+            case $basename in
+                vmlinuz*)
+                    version=${basename##vmlinuz-}
+                ;;
+                vmlinux*)
+                    version=${basename##vmlinux-}
+                ;;
+            esac
+            case $SUB_ARCH in
+                sparc*) 
+                    realnbi="nbi.img-$version-$SUB_ARCH"
+                ;;
+                *)
+                    realnbi="nbi.img-$version"
+                ;;
+            esac
+            if [ -f "$BOOT/$realnbi" ]; then
+                ln -sf $realnbi $BOOT/$nbi
+            fi
+        fi
+    else
+        if which mkelfImage >/dev/null; then
+            # x86_64/amd64 i386 ia64(?): mkelfimage
+            MKELFIMAGE_INITRD_OPT=""
+            if [ -z "$MKELFIMAGE_OPTS" ]; then
+                MKELFIMAGE_OPTS="$BOOTPROMPT_OPTS"
+            fi
+            if [ -f "$BOOT/$initrd" ]; then
+                MKELFIMAGE_INITRD_OPT="--ramdisk=$BOOT/$initrd"
+            fi
+            mkelfImage --command-line="$MKELFIMAGE_OPTS" --output=$BOOT/$nbi.tmp \
+                --kernel=$kernel $MKELFIMAGE_INITRD_OPT && mv $BOOT/$nbi.tmp $BOOT/$nbi
+        elif which mkelf-linux >/dev/null; then
+            # i386: mknbi
+            MKELF_LINUX_INITRD_OPT=""
+            if [ -z "$MKELF_LINUX_APPEND" ]; then
+                MKELF_LINUX_APPEND="$BOOTPROMPT_OPTS"
+            fi
+            if [ -f "$BOOT/$initrd" ]; then
+                MKELF_LINUX_INITRD_OPT="$BOOT/$initrd"
+            fi
+            mkelf-linux $MKELF_LINUX_OPTS --append="$MKELF_LINUX_APPEND" \
+                -o $BOOT/$nbi $kernel $MKELF_LINUX_INITRD_OPT
+        else
+            if [ -z "$mkelf_seen" ]; then
+                mkelf_seen=true
+                msg "Skipping etherboot images.  Install the mkelfimage package if you need them."
+            fi
+        fi
+        if which mknbi-linux >/dev/null ; then
+            # i386: mknbi
+            # generate an legacy-nbi.img for legacy versions of etherboot that
+            # didn't support ELF
+
+            MKNBI_LINUX_INITRD_OPT=""
+            if [ -z "$MKNBI_LINUX_APPEND" ]; then
+                MKNBI_LINUX_APPEND="$BOOTPROMPT_OPTS"
+            fi
+            if [ -f "$BOOT/$initrd" ]; then
+                MKNBI_LINUX_INITRD_OPT="$BOOT/$initrd"
+            fi
+            mknbi-linux $MKNBI_LINUX_OPTS --append="$MKNBI_LINUX_APPEND" \
+                -o $BOOT/legacy-"$nbi" $kernel $MKNBI_LINUX_INITRD_OPT
+
+        fi
+        if which netabootwrap >/dev/null; then
+            # alpha: aboot
+            ABOOT_INITRD_OPT=""
+            if [ -f "$BOOT/$initrd" ]; then
+                ABOOT_INITRD_OPT="-i $BOOT/$initrd"
+            fi
+            netabootwrap -t $BOOT/$nbi -k $kernel $ABOOT_INITRD_OPT
+        else
+            if [ -z "$netabootwrap_seen" ]; then
+                netabootwrap_seen=true
+                msg "Skipping netabootwrap images.  Install the aboot package if you need them."
+            fi
+        fi
+        if which elftoaout >/dev/null ; then
+            # sparc: sparc-utils
+            SPARC_INITRD_OPT=""
+            piggyback_cmd=""
+            case $SUB_ARCH in
+                sparc64) piggyback_cmd=piggyback64 ;;
+                sparc32) piggyback_cmd=piggyback32 ;;
+            esac
+            sysmap=$BOOT/System.map-$version
+            nbi=$nbi-$SUB_ARCH
+
+            # TODO: proper tempfile handline
+            gzip -cd $kernel > $BOOT/$nbi.tmp
+            elftoaout -o $BOOT/$nbi $BOOT/$nbi.tmp
+            rm $BOOT/$nbi.tmp
+            if [ -f "$BOOT/$initrd" ]; then
+                SPARC_INITRD_OPT="$BOOT/$initrd"
+            fi
+            $piggyback_cmd $BOOT/$nbi $sysmap $SPARC_INITRD_OPT
+        else
+            if [ -z "$sparc_piggyback_seen" ]; then
+                sparc_piggyback_seen=true
+                msg "Skipping sparc piggyback images. Install the sparc-utils package if you need them."
+            fi
+        fi
+        if which tip22 >/dev/null ; then
+            # mips: tip22
+            case $kernel in
+                *ip32*) tip=tip32 ;;
+                *) tip=tip22 ;;
+            esac
+            if [ ! -f "$BOOT/$initrd" ]; then
+                # feed a fake initrd, as tip* requires it 
+                dd if=/dev/zero of="$BOOT/$initrd" bs=1 count=1
+            fi
+            $tip $kernel $BOOT/$initrd $BOOT/$nbi.tmp && mv $BOOT/$nbi.tmp $BOOT/$nbi
+        fi
+        case $SUB_ARCH in
+            # arm
+            arm*)
+                if [ -f "$BOOT/$initrd" ]; then
+                    cat $kernel > $BOOT/$nbi.tmp
+                    cat $BOOT/$initrd >> $BOOT/$nbi.tmp
+                    mv $BOOT/$nbi.tmp $BOOT/$nbi
+                else
+                    # copy kernel directly to nbi image
+                    cp $kernel $BOOT/$nbi
+                fi
+                ;;
+        esac
+    fi
+done

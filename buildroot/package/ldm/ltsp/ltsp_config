@@ -1,0 +1,118 @@
+#
+#  Copyright (c) 2005 Canonical LTD
+#
+#  Author: Matt Zimmerman <mdz@canonical.com>
+#
+#  2006, Oliver Grawert <ogra@canonical.com>
+#        Vagrant Cascadian <vagrant@freegeek.org>
+#  2007, Scott Balneaves <sbalneav@ltsp.org>
+#        Oliver Grawert <ogra@canonical.com>
+#  2008, Vagrant Cascadian <vagrant@freegeek.org>
+#        Oliver Grawert <ogra@canonical.com>
+#        Warren Togami <wtogami@redhat.com>
+#        Gideon Romm <ltsp@symbio-technologies.com>
+#  2011, Gideon Romm <ltsp@symbio-technologies.com>
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License as
+#  published by the Free Software Foundation; either version 2 of the
+#  License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, you can find it on the World Wide
+#  Web at http://www.gnu.org/copyleft/gpl.html, or write to the Free
+#  Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
+#  MA 02110-1301, USA.
+#
+
+#
+# ltsp_config: This should be sourced by most scripts within an ltsp
+# environment.  Ensures that LTSP5 defaults are set up
+#
+#
+
+# Source ltsp-client-functions if we have not already (needed in some functions)
+# We set PATH to empty string here (in the subshell), because shell will look
+# for boolean_is_true in PATH if it doesn't find it as a built-in function
+# That search is a waste of time and so, we avoid it by not giving a PATH.
+#
+# Also, let's call this at the very beginning to make absolutely sure that 
+# anything that calls ltsp_config will have ltsp-client-functions sourced
+(PATH="" boolean_is_true True 2>/dev/null) || . /usr/share/ltsp/ltsp-client-functions || true
+
+# Once lts.conf params are processed, they should all be stored
+# in a quickly source-able file: /var/cache/ltsp/ltsp_config_env
+# If this file does not exist, it means we need to process lts.conf
+# If it does exist, we can either just source it, OR if we are asked
+# to process lts.conf again, we should read in all the environemnt
+# variables that were set last time and unset them before processing the
+# lts.conf again
+ltsp_config_env=/var/cache/ltsp/ltsp_config_env
+
+# Make sure cache dir exists
+mkdir -p /var/cache/ltsp
+
+# This function will set the lts.conf var and will be used by ltsp_config.d/
+# scripts
+set_lts_var() {
+    var=$1
+    val=$2
+    [ -z "$var" ] && return
+    sed -i -e "/$var=/d" ${ltsp_config_env}
+    if [ -n "$val" ]; then
+        export "$var"="$val"
+        echo "$var=\"$val\"" >> ${ltsp_config_env}
+    else
+        unset $var
+    fi    
+}
+
+# This function will reset the lts.conf params that were previously set
+reset_lts_env() {
+    [ -r "${ltsp_config_env}" ] || return
+    oldifs="${IFS-not set}"
+    IFS='='
+    while read var val; do
+        unset $var
+        export $var
+    done < ${ltsp_config_env}
+    test "$oldifs" = "not set" && unset IFS || IFS="$oldifs"
+    rm -f ${ltsp_config_env} 2>/dev/null
+    return 0
+}
+
+# This function sets all vars from cache
+set_lts_from_cache() {
+    [ -r "${ltsp_config_env}" ] || return
+    # Make all vars we are about to set exported
+    set -a
+    . ${ltsp_config_env}
+    set +a
+}
+
+# This function will process the lts.conf params
+process_lts_conf() {
+    set -f 
+    if [ -d /usr/share/ltsp/ltsp_config.d ]; then
+        for script in $(run_parts_list /usr/share/ltsp/ltsp_config.d) ; do
+            . $script        
+        done
+    fi
+    set +f
+}
+
+if [ ! -r "${ltsp_config_env}" ]; then
+    process_lts_conf
+else 
+    if boolean_is_true "${PROCESS_LTS_CONF}"; then
+        reset_lts_env
+        process_lts_conf
+    else
+        set_lts_from_cache
+    fi
+fi

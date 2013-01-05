@@ -1,0 +1,148 @@
+# Common functions shared by LTSP init scripts
+
+# ltsp_config sources ltsp-client-functions
+. /usr/share/ltsp/ltsp_config
+
+warn() {
+    msg="$1"
+    logger -p user.warning -t ltsp-client  "warning: $msg"
+}
+
+start_sound() {
+    if boolean_is_true "$SOUND" ; then
+        case "$SOUND_DAEMON" in
+            pulse|'') # The default when no value is set
+                # Explicitly allow pulse user access to sound devices, ignore errors
+                if [ -x /usr/bin/setfacl ]; then
+                    /usr/bin/setfacl -m u:pulse:rw /dev/snd/* > /dev/null 2>&1
+                fi
+
+                # Detect method, 0.9.16+ uses module-udev-detect instead of
+                # module-detect and module-stream-restore instead of
+                # module-volume-restore
+                unset PULSE_DETECT
+                unset PULSE_VOLUME_RESTORE
+                # Replace "awk" with shell built-in "while read"
+                case $(pulseaudio --version |while read a b; do echo $b; done) in
+                    0.9.1[6-9]*|0.9.[2-9][0-9]*) 
+                        PULSE_DETECT=module-udev-detect 
+                        PULSE_VOLUME_RESTORE=module-stream-restore 
+                        ;;
+                    0.[0-9].*) 
+                        PULSE_DETECT=module-detect
+                        PULSE_VOLUME_RESTORE=module-volume-restore
+                        ;;
+                    *) 
+                        PULSE_DETECT=module-udev-detect 
+                        PULSE_VOLUME_RESTORE=module-stream-restore 
+                        ;;
+                esac
+                /usr/bin/pulseaudio --system \
+                --exit-idle-time=-1 \
+                --disable-shm \
+                --no-cpu-limit \
+                --resample-method=trivial \
+                --high-priority \
+                --log-target=syslog \
+                -L $PULSE_DETECT \
+                -L "module-esound-protocol-tcp auth-anonymous=1" \
+                -L "module-native-protocol-tcp auth-anonymous=1" \
+                -L $PULSE_VOLUME_RESTORE \
+                -L module-rescue-streams \
+                -L "module-native-protocol-unix auth-anonymous=1" \
+                -n &
+                ;;
+            esd) 
+                /usr/bin/esd -nobeeps -public -tcp &
+                ;;
+            nasd)
+                /usr/bin/nasd -aa &
+                # Line copied from old LTSP:  Should we use it? [pere 2006-03-03]
+                #aumix-minimal -v100 -w100 -c90 -m10
+                ;;
+            [Ff][Aa][Ll][Ss][Ee]|[Nn]|[Nn][Oo])
+                # Do not do anything if SOUND_DAEMON is False, N, or No
+                true
+                ;;
+            *)
+                warn "Unable to start unsupported sound daemon: '$SOUND_DAEMON'"
+                ;;
+        esac
+    fi
+}
+
+configure_sound_volume() {
+    if boolean_is_true "${SOUND:-True}" ; then
+        CARD_NUM=${1:-0}
+        # Set up sound volume
+        ## Set higher volume than default if not specified by lts.conf
+    
+        [ -z "$VOLUME" ]           && VOLUME=90
+        [ -z "$PCM_VOLUME" ]       && PCM_VOLUME=90
+        
+        LANG=C amixer -c${CARD_NUM} scontents | while read line; do
+            if [ -n "$(echo $line|grep 'Simple mixer control')" ]; then
+                channel=$(echo $line|sed -e 's/^Simple mixer control //')
+            else
+                if [ -n "$channel" ]; then
+                    # Translate the channel name into an environmentally
+                    # friendly variable.  In other words, a variable
+                    # in all caps, where forward slashes, hyphens, and 
+                    # spaces are replaced by underscores, and anything
+                    # in parentheses is dropped completely
+                    # eg. if the channel is named 'Mic Boost (+20dB)'
+                    #     then the variable is simply MIC_BOOST_SWITCH
+                    #
+                    # Oh, and SWITCH is used for on/off switches - value
+                    # should be on or off, and VOLUME is used for volumes
+                    # where the value should be a number representing a 
+                    # percentage
+                    channel_name=$(echo ${channel}|sed -e s/^\'// -e s/\'.*$// -e 's/ -//g' -e 's/ [(].*[)]//' -e 's/\//_/g' -e 's/ /_/g' -e 's/-/_/g' |tr [a-z] [A-Z])
+                    if [ -n "$(echo $line|grep volume)" ]; then
+                        eval channel_vol="\$${channel_name}_VOLUME"
+                        if [ "${channel_name}" = "MIC" ]; then 
+                            cap="cap"
+                        else
+                            unset cap
+                        fi
+                        if boolean_is_true "${VOLUME_MANUAL}"; then
+                            [ -n "${channel_vol}" ] && echo sset "${channel}" ${channel_vol}% unmute $cap 
+                        else
+                            # Set default MIC volumes to 40 if unspecified
+                            # This should resolve feedback issues
+                            case "${channel_name}" in
+                                *MIC*) [ -z "${channel_vol}" ] && channel_vol=40 ;;
+                            esac
+                            echo sset "${channel}" ${channel_vol:-$VOLUME}% unmute $cap 
+                        fi
+                    fi
+                    if [ -n "$(echo $line|grep switch)" ]; then
+                        eval channel_switch="\$${channel_name}_SWITCH"
+                        [ -n "${channel_switch}" ] && echo sset "${channel}" ${channel_switch} 
+                    fi
+                fi
+                unset channel
+            fi
+        done | amixer -c${CARD_NUM} --stdin >/dev/null 2>&1
+    fi
+}
+
+start_screen_sessions() {
+    # If no default was found, there's no SCREEN_xx to be started, so exit
+    test -n "$SCREEN_DEFAULT" || return
+
+    # Start the default screen and make it the active tty
+    openvt -f -c "${SCREEN_DEFAULT#0}" -s -- /usr/share/ltsp/screen_session "$SCREEN_DEFAULT"
+
+    # Give the default screen a head start
+    sleep 1
+
+    # Launch the other screens without switching to them
+    for i in 01 02 03 04 05 06 07 08 09 10 11 12; do
+        test "$i" -eq "$SCREEN_DEFAULT" && continue
+        eval "screen=\$SCREEN_$i"
+        if [ -n "$screen" ]; then
+            openvt -f -c "${i#0}" -- /usr/share/ltsp/screen_session "$i"
+        fi
+    done
+}

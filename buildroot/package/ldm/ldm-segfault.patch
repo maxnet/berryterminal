@@ -1,0 +1,14 @@
+diff -ur ldm-2.2.9/gtkgreet/greeter.c ldm-2.2.9.new/gtkgreet/greeter.c
+--- ldm-2.2.9/gtkgreet/greeter.c        2012-04-13 18:20:16.000000000 +0200
++++ ldm-2.2.9.new/gtkgreet/greeter.c    2012-05-16 15:35:36.964708520 +0200
+@@ -789,8 +789,8 @@
+         timeoutspacer1 = gtk_label_new("");
+         timeoutspacer2 = gtk_label_new("");
+         timeoutlabel = gtk_label_new("");
+-        gtk_box_pack_start(GTK_BOX(vbox), timeoutbox, FALSE, FALSE, 0);
+         timeoutbox = gtk_hbox_new(FALSE, 0);
++        gtk_box_pack_start(GTK_BOX(vbox), timeoutbox, FALSE, FALSE, 0);
+         gtk_box_pack_start(GTK_BOX(timeoutbox), timeoutspacer1, TRUE, FALSE, 0);
+         gtk_box_pack_start(GTK_BOX(timeoutbox), timeoutlabel, FALSE, FALSE, 0);
+         gtk_box_pack_start(GTK_BOX(timeoutbox), timeoutspacer2, TRUE, FALSE, 0);
+

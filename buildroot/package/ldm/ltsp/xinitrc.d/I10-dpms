@@ -1,0 +1,22 @@
+# Sourced
+
+# Set DPMS blanking interval for X
+# NOTE: Does not apply to startx/xdmcp script.  For XDMCP, this should be
+#       accomplished server-side
+
+if [ -n "${X_BLANKING}" ]; then
+    if [ "${X_BLANKING}" = "0" ]; then
+        xset s off
+        xset -dpms
+    else 
+        # X_BLANKING should be a number, if anything else is passed
+        # let's make sure not to return false
+        #
+        # Set both dpms and the screensaver to achieve blanking even
+        # when dpms is not supported. 
+        xset dpms ${X_BLANKING} 2>/dev/null || true
+        xset s ${X_BLANKING} 2>/dev/null || true
+    fi
+fi 
+
+

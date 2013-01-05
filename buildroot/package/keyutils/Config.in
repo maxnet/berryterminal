@@ -1,0 +1,8 @@
+config BR2_PACKAGE_KEYUTILS
+	bool "keyutils"
+	depends on !BR2_avr32 && !BR2_microblaze
+	help
+	  These tools are used to control the key management system
+	  built into the Linux kernel.
+	  
+	  http://people.redhat.com/~dhowells/keyutils/

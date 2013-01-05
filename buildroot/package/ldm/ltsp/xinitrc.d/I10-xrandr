@@ -1,0 +1,98 @@
+#
+# This script will implement xrandr support based on lts.conf vars
+#
+
+# Only execute xrandr code if XRANDR_DISABLE=False
+if ! boolean_is_true "${XRANDR_DISABLE}"; then
+
+#
+# Backward compatibility for X_MODE_0:
+
+c=0
+for i in ${X_MODE_0}; do
+    c=$(($c+1))
+    [ $c = 1 ] && XRANDR_MODE_0=${i}
+done
+[ $c -gt 1 ] && XRANDR_NEWMODE_0=${X_MODE_0}
+unset c
+
+# Definition of lts.conf vars:
+#     XRANDR_OUTPUT_0 = <name of output 0>
+#     XRANDR_RATE_0 = <rate of output 0>
+#     XRANDR_MODE_0 = <mode of output 0>
+#     XRANDR_NEWMODE_0 = <new mode for output 0>
+#     XRANDR_ROTATE_0 = <rotation of output 0>
+#     XRANDR_REFLECT_0 = <reflection of output 0>
+#     XRANDR_DPI_0 = <dpi of output 0>
+##########  Following are for xrandr < 1.2
+#     XRANDR_SIZE_0 = <size of output 0>
+#     XRANDR_ORIENTATION_0 = <orientation of output 0>
+
+XRANDR="xrandr"
+XRANDR_ARGS=
+
+# If the admin does not specify an output, make requested changes to all connected outputs
+if ! env|grep XRANDR_OUTPUT >/dev/null; then
+    CONNECTED_OUTPUTS=$(xrandr -q|grep ' connected'|sed -e 's/^\([^ ]*\) .*$/\1/')
+    o=0
+    for i in $CONNECTED_OUTPUTS; do
+        eval XRANDR_OUTPUT_${o}=${i}
+        if boolean_is_true "${XRANDR_AUTO_MULTIHEAD:-Y}" && [ ${o} -gt 0 ]; then
+            eval XRANDR_OUTPUT_${o}=\"\$XRANDR_OUTPUT_${o} --left-of ${last_i}\"
+            # If no mode is forced for this screen, and 
+            # no mode is forced for any screen, then try to use the preferred 
+            # mode for the attached monitor.
+            # But, if no mode is forced for this screen and a mode is forced
+            # for the first screen, use the first screen's mode for this
+            # screen, as well, because the user is most likely wanting
+            # a multiscreen display with the same forced resolution on all
+            # screens.
+            eval THIS_MODE=\$XRANDR_MODE_${o}
+            if [ -z "${THIS_MODE}" ]; then
+                if [ -z "${XRANDR_MODE_0}" ]; then
+                    eval XRANDR_OUTPUT_${o}=\"\$XRANDR_OUTPUT_${o} --auto\"
+                fi
+            fi
+            unset THIS_MODE
+        fi
+        o=$(($o+1))
+        last_i=${i}
+    done
+fi
+
+# Let's support a 9-headed monster - why not?
+for i in 0 1 2 3 4 5 6 7 8; do
+    eval XRANDR_OUTPUT=\$XRANDR_OUTPUT_${i}
+    eval XRANDR_SIZE=\$XRANDR_SIZE_${i}
+    eval XRANDR_ORIENTATION=\$XRANDR_ORIENTATION_${i}
+    eval XRANDR_RATE=\$XRANDR_RATE_${i}
+    eval XRANDR_MODE=\$XRANDR_MODE_${i}
+    eval XRANDR_NEWMODE=\$XRANDR_NEWMODE_${i}
+    eval XRANDR_ROTATE=\$XRANDR_ROTATE_${i}
+    eval XRANDR_REFLECT=\$XRANDR_REFLECT_${i}
+    eval XRANDR_DPI=\$XRANDR_DPI_${i}
+
+    ########### Xrandr > 1.2 Values (preferred)
+    [ -n "${XRANDR_OUTPUT}" ] && XRANDR_ARGS="${XRANDR_ARGS} --output ${XRANDR_OUTPUT}"
+    [ -n "${XRANDR_RATE}" ] && XRANDR_ARGS="${XRANDR_ARGS} --rate ${XRANDR_RATE}"
+    [ -n "${XRANDR_MODE}" ] && XRANDR_ARGS="${XRANDR_ARGS} --mode ${XRANDR_MODE}"
+    [ -n "${XRANDR_NEWMODE}" ] && XRANDR_ARGS="${XRANDR_ARGS} --newmode ${XRANDR_NEWMODE}"
+    [ -n "${XRANDR_ROTATE}" ] && XRANDR_ARGS="${XRANDR_ARGS} --rotate ${XRANDR_ROTATE}"
+    [ -n "${XRANDR_REFLECT}" ] && XRANDR_ARGS="${XRANDR_ARGS} --reflect ${XRANDR_REFLECT}"
+    [ -n "${XRANDR_DPI}" ] && XRANDR_ARGS="${XRANDR_ARGS} --dpi ${XRANDR_DPI}"
+    ############ Support these for xrandr < 1.2
+    [ -n "${XRANDR_SIZE}" ] && XRANDR_ARGS="${XRANDR_ARGS} -s ${XRANDR_SIZE}"
+    [ -n "${XRANDR_ORIENTATION}" ] && XRANDR_ARGS="${XRANDR_ARGS} -o ${XRANDR_ORIENTATION}"
+
+done
+
+[ -n "${XRANDR_ARGS}" ] && ${XRANDR} ${XRANDR_ARGS}
+
+# XRANDR_COMMAND_[0-9] can be a bit less complex and allows defining new modes
+env | sed -n '/^XRANDR_COMMAND_[0-9]=/s///p' | while read command; do
+    # Remove possible "xrandr" in front of the command
+    command=${command#xrandr}
+    xrandr $command
+done
+
+fi # end of XRANDR_DISABLE=False conditional

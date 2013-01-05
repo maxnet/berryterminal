@@ -1,0 +1,83 @@
+#!/bin/sh
+#
+# Quick & dirty LTSP startup script
+# Author: Floris Bos
+#
+
+case "$1" in
+  start)
+    export XAUTHORITY=/var/run/Xauthority
+    export DISPLAY=:0
+    
+    export LDM_THEME=ltsp
+    export LANG=en_US.UTF-8
+    export LANGUAGE=en_US.UTF-8
+    export LDM_LANGUAGE=en_US.UTF-8
+    export LDM_DIRECTX=True
+    export SOUND=True
+    
+    # FIXME: should introduce a way to embed keys in image to prevent man-in-the-middle scenario
+    export LDM_SSHOPTIONS="-o StrictHostKeyChecking=no -o CheckHostIP=no"
+        
+    # LTSP acts as DHCP server.  /usr/share/uhdcpc/default.script has been modified to save server IP in /tmp/siaddr
+    LDM_SERVER=`cat /tmp/siaddr`
+
+    # Disable (reverse) DNS lookups
+    echo "" >/etc/resolv.conf
+   
+    # If there is a "server=1.2.3.4" kernel parameter use that instead
+    for x in `cat /proc/cmdline`
+    do
+        case $x in
+            server=*)
+            LDM_SERVER=${x//server=}
+            ;;
+            berryconsole)
+            /sbin/getty -L tty2 0 vt100 &
+            ;;
+        esac
+    done
+    export LDM_SERVER
+    
+    echo "Retrieving LDM settings from ${LDM_SERVER}"
+    mkdir /var/run/ldm
+    nc -w 5 ${LDM_SERVER} 9571 > /var/run/ldm/${LDM_SERVER}
+    
+    if [ ! -s /var/run/ldm/${LDM_SERVER} ]; then
+        echo "Error retrieving LDM settings from ${LDM_SERVER}. Not a LTSP server?"
+        echo
+	echo "Note: you can manually specify the LTSP server by putting 'server=1.2.3.4' in cmdline.txt"
+	echo
+        exit 1
+    fi
+
+    echo "Initializing sound"
+    if [ -e /lib/modules/`uname -r`/kernel/sound/arm/snd-bcm2835.ko ]; then
+	modprobe snd-bcm2835
+    fi
+    adduser -D -H pulse 2>/dev/null
+    chown pulse /dev/snd/*
+    pulseaudio --system --exit-idle-time=-1 --disable-shm --no-cpu-limit \
+                --resample-method=trivial --high-priority --log-target=syslog \
+                -L "module-esound-protocol-tcp auth-ip-acl=${LDM_SERVER}" \
+                -L "module-native-protocol-tcp auth-ip-acl=${LDM_SERVER}" &
+    
+    echo "Starting X"
+    MCOOKIE=$(mcookie)
+    xauth -q add ${DISPLAY} . ${MCOOKIE} 2>/dev/null
+
+    while true
+    do
+	clear
+	Xorg -auth $XAUTHORITY &
+        ldm
+	killall Xorg
+        echo "Restarting X and LDM"
+    done
+    ;;
+
+  *)
+    exit 0
+esac
+
+exit $?

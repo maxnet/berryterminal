@@ -1,0 +1,92 @@
+# common code to ltsp x screen scripts
+
+# Copyright (c) 2002 by James A. McQuillan (McQuillan Systems, LLC)
+# Copyright (c) 2008 by Warren Togami      (Red Hat, Inc.)
+# Copyright (c) 2008 by Vagrant Cascadian
+#
+# This software is licensed under the GNU General Public License version 2,
+# the full text of which can be found in the COPYING file.
+
+# Copyright 2005, Canonical Ltd.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, you can find it on the World Wide
+#  Web at http://www.gnu.org/copyleft/gpl.html, or write to the Free
+#  Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
+#  MA 02110-1301, USA.
+
+#
+# Load ltsp config defaults
+#
+
+. /usr/share/ltsp/ltsp_config
+
+# Source ltsp-client-functions if we have not already (needed in some functions)
+(PATH="" boolean_is_true True 2>/dev/null) || . /usr/share/ltsp/ltsp-client-functions || true
+
+#
+# Compute tty and display
+#
+
+TTY=$(tty)
+TTY=${TTY#/dev/tty}
+DISPLAY=":$TTY"
+# set DISP for backwards compatibility with older screen scripts
+DISP="$DISPLAY"
+
+error_delay() {
+    echo -n -e "\n\rERROR: $1"
+    read CMD
+}
+
+# XFS handling
+# implemented as a function so it could be called on sucessive tries
+
+get_xfs_settings() {
+    # set default font path
+    # use XFS_SERVER if defined, otherwise
+    # attempt to use servers passed on commandline
+
+    if boolean_is_true "$USE_XFS" ; then
+        if [ -z "$XFS_SERVER" ]; then
+            # attempt to use other servers
+            for SRV in $@ ; do
+                XFS_SERVER="$XFS_SERVER $SRV"
+            done
+        fi
+        for SRV in $XFS_SERVER ; do
+            xfs_line="tcp/${SRV}:7100"
+            if [ -z "$(echo $X_ARGS | grep $xfs_line)" ]; then
+                if nc -z -w 5 $SRV 7100 >/dev/null ; then
+                    X_ARGS="$X_ARGS -fp $xfs_line"
+                fi
+            fi
+        done
+    fi
+}
+
+# Implemented as a function so it can be called within X screen scripts 
+# as needed
+run_xk_scripts() {
+    # Run files prefixed with XK* in /usr/share/ltsp/screen-session.d/
+    if [ -d "/usr/share/ltsp/screen-session.d/" ]; then
+        for script in $(run_parts_list /usr/share/ltsp/screen-session.d/ XK); do
+            . $script
+        done
+    fi
+}
+
+# Run files prefixed with XS* in /usr/share/ltsp/screen-session.d/
+if [ -d "/usr/share/ltsp/screen-session.d/" ]; then
+    for script in $(run_parts_list /usr/share/ltsp/screen-session.d/ XS); do
+        . $script
+    done
+fi

@@ -1,0 +1,10 @@
+# implement numlock handling if numlockx is installed
+# thanks to Leo Eraly and Gideon Romm
+
+if [ -n "$X_NUMLOCK" ] && [ -x /usr/bin/numlockx ]; then
+    if boolean_is_true "$X_NUMLOCK" ; then
+        /usr/bin/numlockx on
+    else
+        /usr/bin/numlockx off
+    fi
+fi

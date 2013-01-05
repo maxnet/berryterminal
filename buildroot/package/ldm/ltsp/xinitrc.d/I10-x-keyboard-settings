@@ -1,0 +1,30 @@
+# set up X keyboard related options
+
+if [ -x /usr/bin/setxkbmap ]; then
+
+    kbopts=""
+
+    if [ -n "$XKBLAYOUT" ]; then
+        kbopts="$kbopts -layout $XKBLAYOUT"
+    fi
+
+    if [ -n "$XKBMODEL" ]; then
+        kbopts="$kbopts -model $XKBMODEL"
+    fi
+    
+    if [ -n "$XKBRULES" ]; then
+        kbopts="$kbopts -rules $XKBRULES"
+    fi
+
+    if [ -n "$XKBOPTIONS" ]; then
+        kbopts="$kbopts -option $XKBOPTIONS"
+    fi
+
+    if [ -n "$XKBVARIANT" ]; then
+        kbopts="$kbopts -variant $XKBVARIANT"
+    fi
+   
+    if [ -n "$kbopts" ]; then
+        /usr/bin/setxkbmap $kbopts
+    fi
+fi

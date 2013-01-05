@@ -1,0 +1,46 @@
+#!/bin/sh
+# Tries to work around LP bug #696454, i.e. that if the root /dev/nbd0 device
+# is unmounted on shutdown then nbd read errors occur, and if it isn't, then
+# the nbd-server process on the server doesn't terminate.
+# Called by init scripts on reboot or shutdown.
+
+case "$RUNLEVEL" in
+    0)
+        key="o"
+        message="Shutting down NOW."
+        ;;
+    6)
+        key="b"
+        message="Rebooting NOW."
+        ;;
+    *)
+        echo "nbd-disconnect should only be called by initscripts on reboot/shutdown." >&2
+        exit 1
+        ;;
+esac
+
+disconnect() {
+    echo "$message" >&2
+    nbd-client -d /dev/nbd0
+    echo $key > /proc/sysrq-trigger
+}
+
+# Disconnect swap nbd devices first
+while read device etc; do
+    case "$device" in
+        /dev/nbd[1-9])
+            swapoff "$device"
+            nbd-client -d "$device"
+            ;;
+    esac
+done < /proc/swaps
+
+# If we're not using an nbd root, exit
+grep -qw "nbdroot" /proc/cmdline || exit 0
+
+trap "disconnect" 0 HUP INT QUIT KILL SEGV PIPE TERM
+sync
+# Give up to 5 seconds for other services to be called.
+# If they finish before that time, process termination will start, and the trap
+# will be called.
+sleep 5

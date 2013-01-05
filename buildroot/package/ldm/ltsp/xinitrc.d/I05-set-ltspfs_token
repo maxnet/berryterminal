@@ -1,0 +1,15 @@
+#
+# sourced with .
+#
+# Set authentication token for ltspfs in the session
+#
+
+if boolean_is_true "$LOCALDEV" ; then
+    ltspfs_token=/var/run/ltspfs_token
+    if [ ! -f "$ltspfs_token" ]; then
+        # ltspfsd may not have been started yet if no devices are plugged in,
+        # so create the token now.
+        mcookie > "$ltspfs_token"
+    fi
+    xprop -root -f LTSPFS_TOKEN 8s -set LTSPFS_TOKEN $(cat $ltspfs_token)
+fi

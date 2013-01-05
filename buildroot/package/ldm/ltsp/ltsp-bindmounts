@@ -1,0 +1,77 @@
+#! /bin/sh
+
+set -e
+
+# Gracefully exit if ltsp_chroot file is not present
+test -f /etc/ltsp_chroot || exit 0
+
+bind_mounts () {
+    # set defaults
+    test -z "$tmpfs_dir" && tmpfs_dir=/var/lib/ltsp-client-setup
+    mount -t tmpfs -o mode=0755 tmpfs $tmpfs_dir
+    bind_missing=""
+    # preserve directory structure
+    for d in $rw_dirs ; do
+        if [ -d "$d" ]; then
+            cd $tmpfs_dir
+            tar --no-recursion -cpf - $(find $d -type d 2> /dev/null) 2> /dev/null | tar xpf -
+            mount --bind $tmpfs_dir/$d $d
+        else
+            bind_missing="$bind_missing $d"
+        fi
+    done
+    # copy contents into tmpfs
+    for d in $copy_dirs $temp_copy_dirs; do
+        if [ -d "$d" ]; then
+            cd $tmpfs_dir
+            tar -cpf - $d 2> /dev/null | tar xpf -
+            mount --bind $tmpfs_dir/$d $d
+        else
+            bind_missing="$bind_missing $d"
+        fi
+    done
+    # mount one file on top of another
+    for f in $bindfiles ; do
+        if [ -e "$f" ]; then
+            mkdir -p "$(dirname $tmpfs_dir/$f)"
+            cp $f $tmpfs_dir/$f
+            mount --bind $tmpfs_dir/$f $f
+        else
+            bind_missing="$bind_missing $f"
+        fi
+    done
+    if [ -n "$bind_missing" ]; then
+        echo "note: ltsp: missing files or directories for bind mounting: $bind_missing"
+    fi
+}
+
+bind_unmounts() {
+    for dir in $temp_copy_dirs; do
+        umount $dir
+        rm -rf $tmpfs_dir/${dir#/}
+    done
+}
+
+# tmpfs/bind directories that get mounted with only directory structure
+# preserved
+
+rw_dirs="/var/lib/xkb /var/log /var/spool /var/tmp /tmp /etc/console-setup /var/lib/pulse /var/lib/dbus /var/cache/hald /var/cache/ltsp /var/lib/urandom"
+
+# tmpfs/bind directories that get mounted with directory structure and data
+# copied
+copy_dirs="/root /home /var/cache/ltsp-localapps /etc/rsyslog.d /etc/cups /media /etc/cron.d /etc/udev/rules.d"
+
+# tmpfs/bind files that mounted on top of other files
+bindfiles="/etc/network/interfaces /etc/hostname /etc/hosts /etc/syslog.conf /etc/fstab /etc/resolv.conf /etc/X11/xorg.conf /etc/passwd /etc/group /etc/localtime" 
+
+. /usr/share/ltsp/ltsp-init-common
+
+# override variables if configured via lts.conf or ltsp_config
+[ -n "$LTSP_RW_DIRS" ] && rw_dirs="$LTSP_RW_DIRS"
+[ -n "$LTSP_RW_DIRS_EXTRA" ] && rw_dirs="$rw_dirs $LTSP_RW_DIRS_EXTRA"
+[ -n "$LTSP_COPY_DIRS" ] && copy_dirs="$LTSP_COPY_DIRS"
+[ -n "$LTSP_COPY_DIRS_EXTRA" ] && copy_dirs="$rw_dirs $LTSP_COPY_DIRS_EXTRA"
+[ -n "$LTSP_BINDFILES" ] && bindfiles="$LTSP_BINDFILES"
+[ -n "$LTSP_BINDFILES_EXTRA" ] && bindfiles="$rw_dirs $LTSP_BINDFILES_EXTRA"
+
+bind_mounts

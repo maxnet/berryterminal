@@ -1,0 +1,10 @@
+# Generate XAUTHORITY if not already set
+
+# NOTE:  ldm generates its XAUTHORITY in the screen script, so this
+#        should only apply to other sessions
+if [ -z "$XAUTHORITY" ] && [ -n "$DISPLAY" ]; then
+    rm /var/run/xauth-$DISPLAY-* 2>/dev/null
+    XAUTHORITY=`mktemp -u /var/run/xauth-$DISPLAY-XXXXXXXXX`
+    export XAUTHORITY
+    xauth generate $DISPLAY . trusted || true
+fi

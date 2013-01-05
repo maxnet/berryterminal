@@ -1,0 +1,89 @@
+# Common functions shared by LTSP scripts
+
+die() {
+    echo "$@" >&2
+    exit 1
+}
+
+boolean_is_true(){
+    case $1 in
+       # match all cases of true|y|yes
+       [Tt][Rr][Uu][Ee]|[Yy]|[Yy][Ee][Ss]) return 0 ;;
+       *) return 1 ;;
+    esac
+}
+
+# list files in a directory consisting only of alphanumerics, hyphens and
+# underscores
+# $1 - directory to list
+# $2 - optional prefix to limit which files are selected
+run_parts_list() {
+    test $# -ge 1 || die "ERROR: Usage: run_parts_list <dir>"
+    if [ -d "$1" ]; then
+        find -L "$1" -mindepth 1 -maxdepth 1 -type f -name "$2*" |
+            sed -n '/.*\/[0-9a-zA-Z_\-]\{1,\}$/p' | sort -n
+    fi
+}
+
+detect_vendor() {
+    if [ -e /etc/sysconfig/ltspdist ]; then
+        . /etc/sysconfig/ltspdist
+        echo "$VENDORDEF"
+    else
+        echo $(lsb_release --id --short | tr " " "_")
+    fi
+}
+
+# Distros may override this function to implement their own
+# architecture detection.
+detect_arch() {
+    echo $(uname -m)
+}
+
+require_root()
+{
+    if [ ${UID:-$(id -u)} -ne 0 ]; then
+        die "Superuser privileges are needed."
+    fi
+}
+
+# Remember mounted dirs so that it's easier to unmount them with a single call
+# to umount_marked. They'll be unmounted in reverse order.
+# Use the normal mount syntax, e.g.
+#   mark_mount -t proc proc "$ROOT/proc"
+mark_mount() {
+    local dir
+
+    # The last parameter is the dir we need to remember to unmount
+    dir=$(eval "echo \$$#")
+    if mount "$@"; then
+        # Use newlines to separate dirs, in case they contain spaces
+        if [ -z "$MARKED_MOUNTS" ]; then
+            MARKED_MOUNTS="$dir"
+        else
+            MARKED_MOUNTS="$dir
+$MARKED_MOUNTS"
+        fi
+    else
+        die "Could not mount $dir."
+    fi
+}
+
+umount_marked() {
+    [ -z "$MARKED_MOUNTS" ] && return
+
+    echo "$MARKED_MOUNTS" | while read dir; do
+        if ! umount "$dir"; then
+            echo "Couldn't unmount $dir." >&2
+        fi
+    done
+}
+
+# Source tool-specific functions, if they're provided.
+# Recursive inclusions shouldn't ever happen, but let's prevent them anyway.
+if [ -z "$ltsp_tool" ]; then
+    ltsp_tool=${0##*/}
+    if [ -f "/usr/share/ltsp/$ltsp_tool-functions" ]; then
+        . "/usr/share/ltsp/$ltsp_tool-functions"
+    fi
+fi

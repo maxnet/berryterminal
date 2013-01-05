@@ -1,0 +1,12 @@
+# sourced
+
+if [ -f /etc/ltsp/getltscfg-cluster.conf ]; then
+    if ( boolean_is_true "$LDM_AUTOLOGIN" || boolean_is_true "$LDM_GUESTLOGIN" ) && [ -z "$LDM_USERNAME" ]; then
+        login=$(echo "username" | nc $nc_q_param $LDM_SERVER 8001 | awk '{print $2}')
+        export LDM_USERNAME=$login
+    fi
+    if ! boolean_is_true "$CLUSTER_CONFIGURED" && [ -n "$(which ltsp-cluster-info)" ]; then
+        export HOME=/root/
+        ltsp-cluster-info
+    fi
+fi
