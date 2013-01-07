@@ -909,7 +909,6 @@ CONFIG_I2C_HELPER_AUTO=y
 #
 # Other I2C/SMBus bus drivers
 #
-# CONFIG_I2C_STUB is not set
 # CONFIG_I2C_DEBUG_CORE is not set
 # CONFIG_I2C_DEBUG_ALGO is not set
 # CONFIG_I2C_DEBUG_BUS is not set
@@ -1556,10 +1555,6 @@ CONFIG_CRYPTO=y
 #
 # Crypto core or helper
 #
-CONFIG_CRYPTO_ALGAPI=y
-CONFIG_CRYPTO_ALGAPI2=y
-CONFIG_CRYPTO_HASH=y
-CONFIG_CRYPTO_HASH2=y
 # CONFIG_CRYPTO_MANAGER is not set
 # CONFIG_CRYPTO_MANAGER2 is not set
 # CONFIG_CRYPTO_USER is not set
@@ -1567,7 +1562,6 @@ CONFIG_CRYPTO_HASH2=y
 # CONFIG_CRYPTO_NULL is not set
 # CONFIG_CRYPTO_CRYPTD is not set
 # CONFIG_CRYPTO_AUTHENC is not set
-# CONFIG_CRYPTO_TEST is not set
 
 #
 # Authenticated Encryption with Associated Data
@@ -1597,7 +1591,7 @@ CONFIG_CRYPTO_HASH2=y
 #
 # Digest
 #
-CONFIG_CRYPTO_CRC32C=y
+# CONFIG_CRYPTO_CRC32C is not set
 # CONFIG_CRYPTO_GHASH is not set
 # CONFIG_CRYPTO_MD4 is not set
 # CONFIG_CRYPTO_MD5 is not set

@@ -8,6 +8,7 @@ case "$1" in
   start)
     export XAUTHORITY=/var/run/Xauthority
     export DISPLAY=:0
+    export LOCALE=C
     
     export LDM_THEME=ltsp
     export LANG=en_US.UTF-8
@@ -18,6 +19,9 @@ case "$1" in
     
     # FIXME: should introduce a way to embed keys in image to prevent man-in-the-middle scenario
     export LDM_SSHOPTIONS="-o StrictHostKeyChecking=no -o CheckHostIP=no"
+
+    # FIXME: check if this improves performance on boards other than the RPi. If not do a /proc/cpuinfo check
+    export LD_PRELOAD=/usr/lib/libcofi_rpi.so
         
     # LTSP acts as DHCP server.  /usr/share/uhdcpc/default.script has been modified to save server IP in /tmp/siaddr
     LDM_SERVER=`cat /tmp/siaddr`
@@ -35,10 +39,19 @@ case "$1" in
             berryconsole)
             /sbin/getty -L tty2 0 vt100 &
             ;;
+            LDM*)
+            export $x
+            ;;
         esac
     done
     export LDM_SERVER
-    
+
+    if [ -z "${LDM_SERVER}" ]; then
+        echo "Error obtaining IP from DHCP server"
+        echo
+        exit 1
+    fi
+
     echo "Retrieving LDM settings from ${LDM_SERVER}"
     mkdir /var/run/ldm
     nc -w 5 ${LDM_SERVER} 9571 > /var/run/ldm/${LDM_SERVER}
@@ -62,17 +75,19 @@ case "$1" in
                 -L "module-esound-protocol-tcp auth-ip-acl=${LDM_SERVER}" \
                 -L "module-native-protocol-tcp auth-ip-acl=${LDM_SERVER}" &
     
-    echo "Starting X"
     MCOOKIE=$(mcookie)
     xauth -q add ${DISPLAY} . ${MCOOKIE} 2>/dev/null
+    clear
+    echo "Starting X"
 
     while true
     do
-	clear
-	Xorg -auth $XAUTHORITY &
+        Xorg -auth $XAUTHORITY &
         ldm
-	killall Xorg
+        killall Xorg
+        clear 
         echo "Restarting X and LDM"
+        sleep 1
     done
     ;;
 

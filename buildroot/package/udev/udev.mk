@@ -41,6 +41,7 @@ endif
 
 define UDEV_INSTALL_INITSCRIPT
 	$(INSTALL) -m 0755 package/udev/S10udev $(TARGET_DIR)/etc/init.d/S10udev
+	$(INSTALL) -D -m 0755 package/udev/64-xorg-xkb.rules $(TARGET_DIR)/lib/udev/rules.d/64-xorg-xkb.rules
 endef
 
 UDEV_POST_INSTALL_TARGET_HOOKS += UDEV_INSTALL_INITSCRIPT

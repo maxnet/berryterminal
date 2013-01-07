@@ -27,12 +27,30 @@ test -r $UDEV_CONFIG || exit 6
 
 case "$1" in
     start)
+
+        # Handle XKBD keyboard settings provided in cmdline.txt
+        for x in `cat /proc/cmdline`
+        do
+            case $x in
+                XKB*)
+                    mkdir -p /etc/default
+                    echo "$x" >> /etc/default/keyboard
+                ;;
+            esac
+        done
+
         echo -n "Populating ${udev_root:-/dev} using udev: "
         echo -e '\000\000\000\000' > /proc/sys/kernel/hotplug
         $UDEV_BIN -d || (echo "FAIL" && exit 1)
         udevadm trigger
 	udevadm settle
         echo "done"
+
+        while [ ! -e /sys/class/net/eth0 ]
+        do
+            echo "Waiting for eth0 to become ready..."
+            sleep 1
+        done
         ;;
     stop)
         # Stop execution of events
