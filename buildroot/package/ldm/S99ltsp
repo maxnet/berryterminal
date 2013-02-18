@@ -30,6 +30,7 @@ case "$1" in
     echo "" >/etc/resolv.conf
    
     # If there is a "server=1.2.3.4" kernel parameter use that instead
+    # Allow the default language to be overridden too.
     for x in `cat /proc/cmdline`
     do
         case $x in
@@ -41,6 +42,11 @@ case "$1" in
             ;;
             LDM*)
             export $x
+            ;;
+            LANG=*)
+            export LANG=${x//LANG=}
+            export LANGUAGE=${x//LANG=}
+            export LDM_LANGUAGE=${x//LANG=}
             ;;
         esac
     done
